@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: postgres://app_user:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/threats?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: threats
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/000001_Add_threat_table.up.sql:/docker-entrypoint-initdb.d/001.sql:ro
+      - ./migrations/000002_Add_constraint_severity.up.sql:/docker-entrypoint-initdb.d/002.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "threats"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

@@ -1,0 +1,263 @@
+openapi: 3.0.3
+info:
+  title: Information Exchange Service
+  version: 1.0.0
+  description: |
+    API обмена информацией об угрозах. Аутентификация пока не требуется.
+    MD5 принимается в любом регистре и сохраняется в нижнем.
+    Имя очищается от пробелов по краям и не может быть пустым после очистки.
+    Неизвестные свойства запроса игнорируются.
+servers:
+  - url: http://localhost:8080
+    description: Локальный сервер
+tags:
+  - name: Threats
+    description: Создание, чтение и полная замена информации об угрозах
+paths:
+  /info:
+    post:
+      tags: [Threats]
+      operationId: createThreat
+      summary: Создать новую запись об угрозе
+      description: |
+        MD5 должен быть уникальным независимо от регистра.
+        Обязательны только md5 и name. Отсутствующие необязательные поля
+        сохраняются как пустые строки. Тело содержит ровно один JSON-объект.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreatCreateRequest'
+            examples:
+              minimal:
+                summary: Только обязательные поля
+                value:
+                  md5: d41d8cd98f00b204e9800998ecf8427e
+                  name: Trojan.Win32.Generic
+              full:
+                summary: Расширенная информация
+                value:
+                  md5: d41d8cd98f00b204e9800998ecf8427e
+                  name: Trojan.Win32.Generic
+                  description: Троянская программа для Windows
+                  threat_type: trojan
+                  severity: high
+      responses:
+        '201':
+          description: Запись создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Угроза с таким MD5 уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: md5 in db
+                details: md5 d41d8cd98f00b204e9800998ecf8427e not unique
+        '499':
+          $ref: '#/components/responses/Canceled'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '504':
+          $ref: '#/components/responses/Timeout'
+  /info/{md5}:
+    parameters:
+      - $ref: '#/components/parameters/MD5'
+    get:
+      tags: [Threats]
+      operationId: getInfoByMd5
+      summary: Получить информацию об угрозе по MD5
+      responses:
+        '200':
+          description: Информация об угрозе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '499':
+          $ref: '#/components/responses/Canceled'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    put:
+      tags: [Threats]
+      operationId: updateThreat
+      summary: Заменить информацию о существующей угрозе
+      description: |
+        Полная замена изменяемых полей. Обязательно только name.
+        Отсутствующие description, threat_type и severity сбрасываются в пустые
+        строки. MD5 определяется URL и не изменяется. Новая запись не создаётся.
+        created_at сохраняется, updated_at устанавливается базой при обновлении.
+        Тело содержит ровно один JSON-объект.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreatUpdateRequest'
+            examples:
+              minimal:
+                summary: Обновить имя и очистить необязательные поля
+                value:
+                  name: Trojan.Win32.Updated
+              full:
+                summary: Заменить все изменяемые поля
+                value:
+                  name: Trojan.Win32.Updated
+                  description: Уточнённая информация об угрозе
+                  threat_type: trojan
+                  severity: critical
+      responses:
+        '200':
+          description: Обновлённая информация об угрозе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '499':
+          $ref: '#/components/responses/Canceled'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '504':
+          $ref: '#/components/responses/Timeout'
+components:
+  parameters:
+    MD5:
+      name: md5
+      in: path
+      required: true
+      description: MD5 файла, 32 шестнадцатеричных символа
+      schema:
+        $ref: '#/components/schemas/MD5'
+  schemas:
+    MD5:
+      type: string
+      pattern: '^[a-fA-F0-9]{32}$'
+      example: d41d8cd98f00b204e9800998ecf8427e
+    ThreatUpdateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          pattern: '\S'
+          description: Название угрозы; пробелы по краям удаляются
+          example: Trojan.Win32.Generic
+        description:
+          type: string
+          default: ''
+          description: Описание угрозы; отсутствие означает пустую строку
+          example: Троянская программа для Windows
+        threat_type:
+          type: string
+          default: ''
+          description: Произвольный тип угрозы; фиксированного перечня пока нет
+          example: trojan
+        severity:
+          type: string
+          enum: ['', low, medium, high, critical]
+          default: ''
+          description: Уровень опасности; пустая строка означает, что он не указан
+          example: high
+    ThreatCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/ThreatUpdateRequest'
+        - type: object
+          required: [md5]
+          properties:
+            md5:
+              $ref: '#/components/schemas/MD5'
+    ThreatResponse:
+      allOf:
+        - $ref: '#/components/schemas/ThreatUpdateRequest'
+        - type: object
+          required: [md5, description, threat_type, severity, created_at, updated_at]
+          properties:
+            md5:
+              $ref: '#/components/schemas/MD5'
+            created_at:
+              type: string
+              format: date-time
+              readOnly: true
+              description: Время создания, назначаемое базой данных
+              example: '2026-10-27T12:00:00Z'
+            updated_at:
+              type: string
+              format: date-time
+              readOnly: true
+              description: Время последнего обновления, назначаемое базой данных
+              example: '2026-10-27T12:05:00Z'
+    ErrorResponse:
+      type: object
+      required: [message, details]
+      properties:
+        message:
+          type: string
+          description: Краткое описание ошибки
+          example: Threat not found
+        details:
+          type: string
+          description: Дополнительная информация без внутренних ошибок базы данных
+          example: No threat with MD5 d41d8cd98f00b204e9800998ecf8427e found
+  responses:
+    BadRequest:
+      description: Некорректный MD5, JSON или данные запроса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: invalid options
+            details: invalid options
+    NotFound:
+      description: Угроза с указанным MD5 не найдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Threat not found
+            details: No threat with MD5 d41d8cd98f00b204e9800998ecf8427e found
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Timeout:
+      description: Превышен двухсекундный таймаут операции сервиса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: request timeout
+            details: timeout 2s finished
+    Canceled:
+      description: |
+        Нестандартный код текущей реализации для отменённого контекста запроса.
+        При разрыве соединения клиентом доставка ответа не гарантируется.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: client close request
+            details: cancel context
